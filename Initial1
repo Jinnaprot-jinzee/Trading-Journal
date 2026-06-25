@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Initial Phase — Framework Map</title>
+<style>
+  :root{
+    --bg: #0b0e11;
+    --panel: #11161b;
+    --panel-2: #161c22;
+    --line: #232b32;
+    --text: #d8e0e6;
+    --text-dim: #6b7780;
+    --mono: #8fa3ad;
+
+    --root: #e8c468;       /* amber — root/anchor */
+    --good: #4fd1a5;       /* green — bullish/good outcome */
+    --bad: #e8627a;        /* red — fail/bad outcome */
+    --neutral: #5b9bd5;    /* blue — structural/neutral */
+    --warn: #d9a05b;       /* orange — conditional/depends */
+  }
+
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0; padding:0; height:100%;
+    background: var(--bg);
+    font-family: 'SF Mono','Consolas',ui-monospace,monospace;
+    color: var(--text);
+    overflow:hidden;
+  }
+
+  /* faint grid backdrop, trading-terminal feel */
+  #canvas-wrap{
+    position:relative; width:100%; height:100vh;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+    background-size: 32px 32px;
+    cursor: grab;
+  }
+  #canvas-wrap.dragging{ cursor: grabbing; }
+
+  #stage{
+    position:absolute; top:0; left:0;
+    transform-origin: 0 0;
+    will-change: transform;
+  }
+
+  svg#connectors{
+    position:absolute; top:0; left:0;
+    overflow:visible;
+    pointer-events:none;
+  }
+
+  .node{
+    position:absolute;
+    border-radius:10px;
+    border:1px solid var(--line);
+    background: var(--panel);
+    padding:10px 14px;
+    font-size:13px;
+    line-height:1.45;
+    cursor:pointer;
+    user-select:none;
+    box-shadow: 0 1px 0 rgba(0,0,0,0.4), 0 4px 14px rgba(0,0,0,0.25);
+    transition: box-shadow .15s ease, border-color .15s ease, transform .1s ease;
+  }
+  .node:hover{
+    border-color: var(--mono);
+    transform: translateY(-1px);
+  }
+  .node.collapsed-some{
+    box-shadow: 0 1px 0 rgba(0,0,0,0.4), 0 4px 14px rgba(0,0,0,0.25), 0 0 0 3px rgba(255,255,255,0.02);
+  }
+
+  .node .label{
+    font-weight:600;
+    color: var(--text);
+    display:flex; align-items:flex-start; gap:8px;
+  }
+  .node .tag{
+    flex:0 0 auto;
+    font-size:10px;
+    letter-spacing:.04em;
+    padding:1px 6px;
+    border-radius:4px;
+    margin-top:1px;
+    font-weight:700;
+  }
+  .node .toggle{
+    margin-left:auto; flex:0 0 auto;
+    color: var(--text-dim);
+    font-size:11px;
+    padding-left:6px;
+  }
+
+  .node.root{
+    background: linear-gradient(180deg, #1a1610, var(--panel));
+    border-color: var(--root);
+    box-shadow: 0 0 0 1px rgba(232,196,104,0.15), 0 6px 20px rgba(0,0,0,0.35);
+  }
+  .node.root .label{ color: var(--root); font-size:15px; }
+
+  .tag.good{ background: rgba(79,209,165,0.12); color: var(--good); border:1px solid rgba(79,209,165,0.3);}
+  .tag.bad{ background: rgba(232,98,122,0.12); color: var(--bad); border:1px solid rgba(232,98,122,0.3);}
+  .tag.neutral{ background: rgba(91,155,213,0.12); color: var(--neutral); border:1px solid rgba(91,155,213,0.3);}
+  .tag.warn{ background: rgba(217,160,91,0.12); color: var(--warn); border:1px solid rgba(217,160,91,0.3);}
+
+  .node .detail{
+    margin-top:6px;
+    color: var(--text-dim);
+    font-size:11.5px;
+    line-height:1.5;
+  }
+
+  .node[data-collapsed="true"] .children-note{
+    display:inline;
+  }
+  .children-note{
+    display:none;
+    color: var(--text-dim);
+    font-size:10.5px;
+    margin-left:6px;
+  }
+
+  path.link{
+    fill:none;
+    stroke: var(--line);
+    stroke-width: 1.5;
+  }
+  path.link.good{ stroke: rgba(79,209,165,0.45); }
+  path.link.bad{ stroke: rgba(232,98,122,0.45); }
+  path.link.neutral{ stroke: rgba(91,155,213,0.4); }
+  path.link.warn{ stroke: rgba(217,160,91,0.4); }
+
+  /* UI chrome */
+  #hud{
+    position:fixed; top:16px; left:16px;
+    z-index:10;
+    background: rgba(17,22,27,0.9);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:12px 16px;
+    backdrop-filter: blur(6px);
+    max-width:280px;
+  }
+  #hud h1{
+    font-size:13px; margin:0 0 4px 0; color: var(--root);
+    letter-spacing:.03em; font-weight:700;
+  }
+  #hud p{
+    margin:0; font-size:11px; color: var(--text-dim); line-height:1.5;
+  }
+  #legend{
+    display:flex; flex-wrap:wrap; gap:8px; margin-top:8px;
+  }
+  #legend span{
+    font-size:10px; display:flex; align-items:center; gap:5px; color:var(--text-dim);
+  }
+  #legend i{
+    width:8px; height:8px; border-radius:50%; display:inline-block;
+  }
+
+  #controls{
+    position:fixed; bottom:16px; right:16px;
+    z-index:10;
+    display:flex; gap:8px;
+  }
+  #controls button{
+    background: var(--panel-2);
+    border:1px solid var(--line);
+    color: var(--text);
+    border-radius:8px;
+    padding:8px 12px;
+    font-size:11px;
+    font-family:inherit;
+    cursor:pointer;
+    transition: border-color .15s;
+  }
+  #controls button:hover{ border-color: var(--mono); }
+
+  #zoom-readout{
+    position:fixed; bottom:16px; left:16px;
+    z-index:10;
+    color: var(--text-dim);
+    font-size:11px;
+    background: rgba(17,22,27,0.9);
+    border:1px solid var(--line);
+    border-radius:8px;
+    padding:6px 10px;
+  }
+</style>
+</head>
+<body>
+
+<div id="hud">
+  <h1>INITIAL PHASE — FRAMEWORK MAP</h1>
+  <p>คลิกโหนดเพื่อ expand/collapse · ลากพื้นหลังเพื่อ pan · scroll เพื่อ zoom</p>
+  <div id="legend">
+    <span><i style="background:var(--root)"></i>Root / เป้าหมาย</span>
+    <span><i style="background:var(--good)"></i>ผลดี</span>
+    <span><i style="background:var(--bad)"></i>Fail</span>
+    <span><i style="background:var(--neutral)"></i>โครงสร้าง</span>
+    <span><i style="background:var(--warn)"></i>เงื่อนไข</span>
+  </div>
+</div>
+
+<div id="zoom-readout">100%</div>
+
+<div id="controls">
+  <button id="expand-all">Expand All</button>
+  <button id="collapse-all">Collapse All</button>
+  <button id="reset-view">Reset View</button>
+</div>
+
+<div id="canvas-wrap">
+  <div id="stage">
+    <svg id="connectors"></svg>
+  </div>
+</div>
+
+<script>
+/* ============== DATA MODEL ============== */
+/* tag: root | good | bad | neutral | warn  — drives color coding */
+
+const data = {
+  id: "root",
+  tag: "root",
+  title: "Initial Phase",
+  detail: "เป้าหมาย: เห็น Initial อัตโนมัติ",
+  children: [
+    {
+      id: "trend",
+      tag: "neutral",
+      title: "1. เงื่อนไขวิเคราะห์เทรนด์",
+      detail: "Trend ก่อนหน้า — ถ้าพักเกินเวลา = EOM รอ EOT",
+      children: [
+        {
+          id: "trend-100",
+          tag: "neutral",
+          title: "แท่ง 100:100 ต่อกัน",
+          detail: "พัก x6 → ได้ Saucer นาน",
+        },
+        {
+          id: "trend-expand",
+          tag: "neutral",
+          title: "3 ขยาย",
+          detail: "พัก x4 → ได้ Saucer เร็ว",
+        },
+        {
+          id: "trend-shrink",
+          tag: "warn",
+          title: "3 หด",
+          detail: "พัก x0.5 – x4 (แยกตามแท่ง Impulse)",
+          children: [
+            {
+              id: "shrink-imp",
+              tag: "good",
+              title: "มีแท่ง Impulse",
+              detail: "พัก x1 ถ้าทำ Good H&S\nหรือ x4 → Saucer เร็ว",
+            },
+            {
+              id: "shrink-noimp",
+              tag: "bad",
+              title: "ไม่มีแท่ง Impulse",
+              detail: "พัก x0.5 – x2 → V-shape",
+            }
+          ]
+        }
+      ]
+    },
+    {
+      id: "base",
+      tag: "neutral",
+      title: "2. Initial มีฐานหรือไม่",
+      detail: "ฐานมีคั่นเทรนด์ — นับที่เนื้อเทียน แท่งเต็ม จุดสำคัญ",
+      children: [
+        {
+          id: "no-base",
+          tag: "bad",
+          title: "ไม่มีฐาน",
+          detail: "โอกาส Fail หรือย่อลึก",
+        },
+        {
+          id: "has-base",
+          tag: "warn",
+          title: "มีฐาน",
+          detail: "Engulfing สลับไปมา\n(ฐานแข็ง = ตัด set)",
+        }
+      ]
+    },
+    {
+      id: "position",
+      tag: "warn",
+      title: "3. ฐานราคา Position ดี/เลว",
+      detail: "ประเมินคุณภาพตำแหน่งราคาของฐาน",
+      children: [
+        {
+          id: "pos-good",
+          tag: "good",
+          title: "Position ดี",
+          detail: "มาถูก",
+        },
+        {
+          id: "pos-bad",
+          tag: "warn",
+          title: "Position เลว",
+          detail: "ต้องเช็ค Quality ต่อ",
+          children: [
+            {
+              id: "q-good",
+              tag: "good",
+              title: "Quality ดี",
+              detail: "แท่งเต็ม ไส้สั้น\n→ มาถูก แต่ย่อลึก",
+            },
+            {
+              id: "q-bad",
+              tag: "bad",
+              title: "Quality เลว",
+              detail: "Fail",
+            }
+          ]
+        }
+      ]
+    },
+    {
+      id: "extra",
+      tag: "neutral",
+      title: "4. ข้อมูลเพิ่มเติม",
+      detail: "หลักการวาดกล่อง Block ราคา",
+      children: [
+        {
+          id: "block-draw",
+          tag: "neutral",
+          title: "วาดกล่อง Block ราคา",
+          detail: "ลากเฉพาะเนื้อเทียนสำคัญ\nนำความสูงส่ง 2 เท่า เพื่อมอง Mid 1",
+        },
+        {
+          id: "block-def",
+          tag: "neutral",
+          title: "นิยาม Block ราคา",
+          detail: "คือจุดคั่นระหว่าง Initial และ Mid 1",
+        }
+      ]
+    }
+  ]
+};
+
+/* ============== LAYOUT ENGINE ============== */
+/* Horizontal tree: root on the left, children flow right.
+   Each node's vertical position = midpoint of its (visible) children.
+   Heights are measured from real rendered DOM, not estimated, so
+   wrapped text never causes overlap. */
+
+const H_GAP = 320;     // horizontal distance between depth levels
+const V_GAP = 22;      // vertical gap between sibling nodes
+const NODE_W = 260;
+
+let nodeMap = {};  // id -> node data ref
+let collapsedSet = new Set(); // ids currently collapsed
+
+function indexNodes(n){
+  nodeMap[n.id] = n;
+  if(n.children) n.children.forEach(indexNodes);
+}
+indexNodes(data);
+
+function isCollapsed(id){ return collapsedSet.has(id); }
+
+function visibleChildren(n){
+  if(!n.children) return [];
+  if(isCollapsed(n.id)) return [];
+  return n.children;
+}
+
+// Measure subtree height (in px) using REAL measured heights (n._realH)
+function measure(n){
+  const kids = visibleChildren(n);
+  const ownH = n._realH || 50;
+  if(kids.length === 0){
+    n._h = ownH;
+    return n._h;
+  }
+  let total = 0;
+  kids.forEach((k, i) => {
+    total += measure(k);
+    if(i < kids.length - 1) total += V_GAP;
+  });
+  n._h = Math.max(total, ownH);
+  return n._h;
+}
+
+function layout(n, depth, top){
+  n._x = depth * H_GAP;
+  const kids = visibleChildren(n);
+  if(kids.length === 0){
+    n._y = top + n._h/2;
+    return;
+  }
+  let cursor = top;
+  kids.forEach(k => {
+    layout(k, depth+1, cursor);
+    cursor += k._h + V_GAP;
+  });
+  // center parent over children span
+  const first = kids[0], last = kids[kids.length-1];
+  n._y = (first._y + last._y) / 2;
+}
+
+/* ============== RENDER ============== */
+
+const stage = document.getElementById('stage');
+const svg = document.getElementById('connectors');
+
+function clearRenderedNodes(){
+  stage.querySelectorAll('.node').forEach(el => el.remove());
+}
+
+function buildNodeEl(n){
+  const el = document.createElement('div');
+  el.className = 'node' + (n.id === 'root' ? ' root' : '');
+  el.style.width = NODE_W + 'px';
+  el.dataset.id = n.id;
+
+  const hasKids = n.children && n.children.length > 0;
+  const collapsed = hasKids && isCollapsed(n.id);
+
+  const tagLabel = {
+    root: 'GOAL', good: 'GOOD', bad: 'FAIL', neutral: 'STRUCT', warn: 'COND'
+  }[n.tag] || '';
+
+  el.innerHTML = `
+    <div class="label">
+      <span class="tag ${n.tag}">${tagLabel}</span>
+      <span>${n.title}</span>
+      ${hasKids ? `<span class="toggle">${collapsed ? '▸ '+n.children.length : '▾'}</span>` : ''}
+    </div>
+    ${n.detail ? `<div class="detail">${escapeHtml(n.detail).replace(/\n/g,'<br>')}</div>` : ''}
+  `;
+
+  if(hasKids){
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if(isCollapsed(n.id)) collapsedSet.delete(n.id);
+      else collapsedSet.add(n.id);
+      render();
+    });
+  }
+  return el;
+}
+
+function render(){
+  clearRenderedNodes();
+
+  // ---- PASS 1: render every visible node off-flow to measure real height ----
+  const visibleList = [];
+  function collectVisible(n, parent){
+    visibleList.push({n, parent});
+    if(n.children && !isCollapsed(n.id)){
+      n.children.forEach(c => collectVisible(c, n));
+    }
+  }
+  collectVisible(data, null);
+
+  const elMap = {};
+  visibleList.forEach(({n}) => {
+    const el = buildNodeEl(n);
+    el.style.visibility = 'hidden';
+    el.style.left = '0px';
+    el.style.top = '0px';
+    stage.appendChild(el);
+    elMap[n.id] = el;
+  });
+
+  // force layout, then read real heights
+  visibleList.forEach(({n}) => {
+    n._realH = elMap[n.id].offsetHeight;
+  });
+
+  // ---- PASS 2: compute tree layout using real heights ----
+  measure(data);
+  layout(data, 0, 0);
+
+  // ---- PASS 3: position elements for real ----
+  let minY = Infinity, maxY = -Infinity, maxX = -Infinity;
+  let svgPaths = [];
+
+  visibleList.forEach(({n, parent}) => {
+    const el = elMap[n.id];
+    el.style.left = n._x + 'px';
+    el.style.top = n._y + 'px';
+    el.style.transform = 'translateY(-50%)';
+    el.style.visibility = 'visible';
+
+    minY = Math.min(minY, n._y - n._h/2);
+    maxY = Math.max(maxY, n._y + n._h/2);
+    maxX = Math.max(maxX, n._x + NODE_W);
+
+    if(parent){
+      svgPaths.push({from: parent, to: n, tag: n.tag});
+    }
+  });
+
+  // build connector paths using real measured heights/positions
+  let pathsHtml = '';
+  svgPaths.forEach(({from, to, tag}) => {
+    const fx = from._x + NODE_W;
+    const fy = from._y;
+    const tx = to._x;
+    const ty = to._y;
+    const midX = (fx + tx) / 2;
+    pathsHtml += `<path class="link ${tag}" d="M ${fx} ${fy} C ${midX} ${fy}, ${midX} ${ty}, ${tx} ${ty}"/>`;
+  });
+  svg.innerHTML = pathsHtml;
+  svg.setAttribute('width', maxX + 100);
+  svg.setAttribute('height', maxY - minY + 200);
+  svg.style.top = (minY - 100) + 'px';
+  svg.querySelectorAll('path').forEach(p => {
+    p.setAttribute('transform', `translate(0, ${100 - minY})`);
+  });
+}
+
+function escapeHtml(s){
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+/* ============== PAN & ZOOM ============== */
+
+let scale = 0.85, panX = 80, panY = window.innerHeight/2;
+let isDragging = false, startX, startY, startPanX, startPanY;
+
+const wrap = document.getElementById('canvas-wrap');
+const zoomReadout = document.getElementById('zoom-readout');
+
+function applyTransform(){
+  stage.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
+  zoomReadout.textContent = Math.round(scale*100) + '%';
+}
+
+wrap.addEventListener('mousedown', (e) => {
+  isDragging = true;
+  wrap.classList.add('dragging');
+  startX = e.clientX; startY = e.clientY;
+  startPanX = panX; startPanY = panY;
+});
+window.addEventListener('mousemove', (e) => {
+  if(!isDragging) return;
+  panX = startPanX + (e.clientX - startX);
+  panY = startPanY + (e.clientY - startY);
+  applyTransform();
+});
+window.addEventListener('mouseup', () => {
+  isDragging = false;
+  wrap.classList.remove('dragging');
+});
+
+wrap.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const delta = -e.deltaY * 0.001;
+  const newScale = Math.min(2.2, Math.max(0.25, scale + delta));
+
+  // zoom around mouse position
+  const rect = wrap.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  const wx = (mx - panX) / scale;
+  const wy = (my - panY) / scale;
+
+  scale = newScale;
+  panX = mx - wx * scale;
+  panY = my - wy * scale;
+  applyTransform();
+}, { passive: false });
+
+// touch support (mobile)
+let lastTouchDist = null;
+wrap.addEventListener('touchstart', (e) => {
+  if(e.touches.length === 1){
+    isDragging = true;
+    startX = e.touches[0].clientX; startY = e.touches[0].clientY;
+    startPanX = panX; startPanY = panY;
+  } else if(e.touches.length === 2){
+    isDragging = false;
+    lastTouchDist = touchDist(e.touches);
+  }
+});
+wrap.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  if(e.touches.length === 1 && isDragging){
+    panX = startPanX + (e.touches[0].clientX - startX);
+    panY = startPanY + (e.touches[0].clientY - startY);
+    applyTransform();
+  } else if(e.touches.length === 2){
+    const dist = touchDist(e.touches);
+    if(lastTouchDist){
+      const delta = (dist - lastTouchDist) * 0.004;
+      scale = Math.min(2.2, Math.max(0.25, scale + delta));
+      applyTransform();
+    }
+    lastTouchDist = dist;
+  }
+}, { passive: false });
+wrap.addEventListener('touchend', () => { isDragging = false; lastTouchDist = null; });
+
+function touchDist(touches){
+  const dx = touches[0].clientX - touches[1].clientX;
+  const dy = touches[0].clientY - touches[1].clientY;
+  return Math.sqrt(dx*dx + dy*dy);
+}
+
+/* ============== CONTROLS ============== */
+
+document.getElementById('expand-all').addEventListener('click', () => {
+  collapsedSet.clear();
+  render();
+});
+document.getElementById('collapse-all').addEventListener('click', () => {
+  collapsedSet.clear();
+  // collapse everything except root
+  function collectIds(n){
+    if(n.id !== 'root' && n.children && n.children.length) collapsedSet.add(n.id);
+    if(n.children) n.children.forEach(collectIds);
+  }
+  collectIds(data);
+  render();
+});
+document.getElementById('reset-view').addEventListener('click', () => {
+  scale = 0.85; panX = 80; panY = window.innerHeight/2;
+  applyTransform();
+});
+
+/* ============== INIT ============== */
+render();
+applyTransform();
+window.addEventListener('resize', () => {
+  panY = window.innerHeight/2;
+  applyTransform();
+});
+</script>
+</body>
+</html>
